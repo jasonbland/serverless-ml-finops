@@ -27,3 +27,32 @@ jobs:
       - run: terraform -chdir=terraform fmt -check -recursive
       - run: terraform -chdir=terraform init -backend=false
       - run: terraform -chdir=terraform validate
+
+  # Catch broken *relative* links in the docs (offline → no flaky external-host checks).
+  links:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Check relative links
+        uses: lycheeverse/lychee-action@v2
+        with:
+          args: "--offline --no-progress ./README.md ./ARCHITECTURE.md ./terraform/README.md"
+          fail: true
+
+  # Auto-generate the Terraform variables/outputs tables and commit them back.
+  # Push-to-main only (PRs from forks can't push); the commit is marked [skip ci].
+  terraform-docs:
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+      - name: Render terraform-docs into terraform/README.md
+        uses: terraform-docs/gh-actions@v1
+        with:
+          working-dir: terraform
+          output-file: README.md
+          output-method: inject
+          git-push: "true"
+          git-commit-message: "docs(terraform): sync terraform-docs [skip ci]"

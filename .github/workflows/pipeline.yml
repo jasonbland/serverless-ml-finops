@@ -1,13 +1,15 @@
 name: ML-FinOps Pipeline
 
-# Manual trigger. GitHub shows a form for these inputs when you click "Run workflow".
+# Manual trigger shows an input form. The daily schedule POLLS for cost data (which lags
+# ~24-48h): it exits quietly until Cost Explorer has ingested the tagged usage, then
+# uploads the CSV artifact and opens a GitHub issue to notify you — no approval needed.
 on:
   workflow_dispatch:
     inputs:
       action:
         description: "What to run"
         type: choice
-        options: [load-test, cost-query]
+        options: [load-test, cost-query, all]
         default: load-test
       requests:
         description: "load-test: number of requests"
@@ -29,48 +31,78 @@ on:
         description: "cost-query: end YYYY-MM-DD (blank = tomorrow)"
         type: string
         default: ""
+  schedule:
+    - cron: "0 14 * * *" # daily 14:00 UTC — poll for cost data, notify when ready
 
 permissions:
   contents: read
-  id-token: write # required for AWS OIDC
+  id-token: write # AWS OIDC
+  issues: write # open the "data ready" notification issue
 
 jobs:
-  load-test:
-    if: ${{ inputs.action == 'load-test' }}
+  pipeline:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
         with: { python-version: "3.12" }
-      - name: Generate load (no AWS auth needed — hits the public endpoint)
+
+      # --- Load test (no AWS auth; hits the public endpoint) ---
+      - name: Generate load
+        if: ${{ github.event_name == 'workflow_dispatch' && (inputs.action == 'load-test' || inputs.action == 'all') }}
         env:
           API_URL: ${{ vars.API_URL }}
         run: |
           test -n "$API_URL" || { echo "Set the repo Actions variable API_URL first."; exit 1; }
           python scripts/load_test.py --url "$API_URL" -n "${{ inputs.requests }}" -c "${{ inputs.concurrency }}"
+          echo "::notice::Load generated. The daily poll will capture the cost once Cost Explorer ingests it (~24-48h)."
 
-  cost-query:
-    if: ${{ inputs.action == 'cost-query' }}
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-python@v5
-        with: { python-version: "3.12" }
-      - name: Assume AWS role via OIDC (no stored keys)
+      # --- Cost query (OIDC; no stored keys). Runs on schedule, or dispatch cost-query/all. ---
+      - name: Assume AWS role via OIDC
+        if: ${{ github.event_name == 'schedule' || (github.event_name == 'workflow_dispatch' && (inputs.action == 'cost-query' || inputs.action == 'all')) }}
         uses: aws-actions/configure-aws-credentials@v4
         with:
           role-to-assume: ${{ vars.AWS_ROLE_ARN }}
           aws-region: us-east-2
-      - name: Install deps
-        run: pip install -q -r scripts/requirements.txt
-      - name: Query Cost Explorer → dashboards/*.csv
+
+      - name: Query Cost Explorer (gated — exit 2 until data lands)
+        id: cost
+        if: ${{ github.event_name == 'schedule' || (github.event_name == 'workflow_dispatch' && (inputs.action == 'cost-query' || inputs.action == 'all')) }}
         run: |
-          python scripts/cost_query.py --predictions "${{ inputs.predictions }}" \
+          pip install -q -r scripts/requirements.txt
+          set +e
+          python scripts/cost_query.py --gate \
+            --predictions "${{ inputs.predictions || '20000' }}" \
             ${{ inputs.start_date != '' && format('--start {0}', inputs.start_date) || '' }} \
             ${{ inputs.end_date != '' && format('--end {0}', inputs.end_date) || '' }}
-      - name: Upload cost CSVs as an artifact
+          code=$?
+          set -e
+          if [ "$code" = "0" ]; then
+            echo "ready=true" >> "$GITHUB_OUTPUT"
+          elif [ "$code" = "2" ]; then
+            echo "ready=false" >> "$GITHUB_OUTPUT"
+            echo "::notice::Cost data not ready yet — the next daily poll will retry."
+          else
+            echo "cost_query.py failed (exit $code)"; exit "$code"
+          fi
+
+      - name: Upload cost CSVs (only when data is ready)
+        if: ${{ steps.cost.outputs.ready == 'true' }}
         uses: actions/upload-artifact@v4
         with:
           name: cost-results
           path: dashboards/*.csv
-          if-no-files-found: warn
+
+      - name: Notify — open a one-time issue when data lands
+        if: ${{ steps.cost.outputs.ready == 'true' }}
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          title="✅ FinOps cost data is ready"
+          existing=$(gh issue list --state open --search "$title in:title" --json number --jq '.[0].number' || true)
+          if [ -z "$existing" ]; then
+            gh issue create --title "$title" --body \
+              "Cost Explorer has ingested the tagged usage. The latest pipeline run uploaded \`dashboards/*.csv\` as the **cost-results** artifact (Actions → latest run → Artifacts). Pull the numbers for the Final / run make_figures.py. Close this once collected."
+          else
+            echo "Issue #$existing already open — not duplicating."
+          fi

@@ -85,6 +85,8 @@ def main() -> None:
     ap.add_argument("--predictions", type=int, required=True, help="predictions served in the window")
     ap.add_argument("--start", default=str(today - dt.timedelta(days=7)))
     ap.add_argument("--end", default=str(today + dt.timedelta(days=1)))
+    ap.add_argument("--gate", action="store_true",
+                    help="exit 2 (not 0) if no tagged usage has landed yet — for CI polling")
     args = ap.parse_args()
     OUT.mkdir(exist_ok=True)
     ce = ce_client()
@@ -93,6 +95,13 @@ def main() -> None:
     usage = usage_by_type(ce, args.start, args.end)
     net_total = sum(r["cost_usd"] for r in rows)
     list_total = list_price(usage)
+
+    # Readiness gate: Cost Explorer lags ~24-48h. If nothing has landed, signal "not ready"
+    # (exit 2) so a CI poll can skip quietly instead of writing a misleading $0 artifact.
+    if args.gate and net_total == 0 and sum(usage.values()) == 0:
+        print(f"DATA NOT READY — no tagged usage for {args.start}..{args.end} yet "
+              "(Cost Explorer lag, or the Project tag isn't active). Will retry on the next poll.")
+        raise SystemExit(2)
 
     # --- cost_over_time.csv
     with open(OUT / "cost_over_time.csv", "w", newline="") as f:

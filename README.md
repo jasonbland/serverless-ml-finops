@@ -199,6 +199,12 @@ python3 scripts/load_test.py --url "$API_URL" -n 50000 -c 40
 A stdlib threaded generator that varies the feature payloads. This is what produces the usage that
 later shows up as cost. **Run one at a time** — overlapping runs smear the metrics/cost windows together.
 
+> **Concurrency note:** new AWS accounts cap **Lambda concurrent executions at ~10**. If `-c` exceeds
+> the quota, excess requests are **throttled** and returned as **API Gateway 5xx** (not a code bug —
+> Lambda errors stay at 0). For a clean, un-throttled baseline use `-c 8`; check your quota with
+> `aws service-quotas get-service-quota --service-code lambda --quota-code L-B99A9384`. See the
+> throttling finding in [ARCHITECTURE.md](ARCHITECTURE.md).
+
 ### 5. Monitor it (observability)
 
 Lambda is request-scoped — there is no process to start or stop; idle costs nothing. You watch it four ways:
@@ -321,6 +327,7 @@ The CI role is least-privilege: Cost Explorer read + `cloudwatch:GetMetricData` 
 | `curl` returns 404 / `Not Found` | Double-slash in the URL (`//predict`). Use the `api_url` output verbatim — single `/predict`. |
 | Dashboard / metrics empty | Wrong console **region** — switch to **us-east-2**. Or metrics haven't propagated yet (~1–2 min). |
 | Load test: 0 invocations | Bad `API_URL`, or a firewall between you and AWS. Verify `curl` works first. |
+| Load test: many **5xx / throttles** | Client `-c` exceeds the account's **Lambda concurrency quota** (new accounts ≈ 10). Lower `-c` to 8, or raise the quota. 0 Lambda errors confirms it's throttling, not a code bug. |
 | `cost_query.py` returns \$0 / no rows | Expected early: billing lags 24–48h, **and** the `Project` cost-allocation tag must be **activated** (console, ~24h). |
 | Cost per-service is blank but total isn't | The `Project` tag isn't active yet — activate it in Billing → Cost allocation tags. |
 | CI cost step "not ready" | The `--gate` poller exits 2 until data lands; the daily cron retries. Normal for the first 1–2 days. |

@@ -107,6 +107,22 @@ can only state credibly by measuring usage and pricing it explicitly, rather tha
 The planned **Lambda memory experiment** (128 / 256 / 512 MB) extends this: more memory cuts duration
 but raises the GB-ms rate, so there's a cost/latency sweet spot the pipeline can find empirically.
 
+### Finding: concurrency throttling under burst load
+
+A load test of ~40,000 requests surfaced a clean scaling result: **25,071 requests reached Lambda
+(0 errors), while 14,926 were throttled** and returned by API Gateway as 5xx — the throttle count and
+the 5xx count match exactly. Root cause: the account's **Lambda concurrent-execution quota was 10**
+(AWS now starts new accounts well below the historical 1,000), and the client's burst concurrency
+exceeded it. Lambda latency stayed tiny throughout (p50 1.8 ms, p99 21 ms); the API-edge p99 of ~220 ms
+is the throttling + cold-start tail, not compute.
+
+The FinOps implication is the point: **throttled requests still incur API Gateway request charges but
+zero Lambda compute cost** — an under-provisioned serverless endpoint *pays for its own failures*. The
+levers are (a) keep client concurrency under the quota, (b) raise the account quota via Service Quotas,
+or (c) set **reserved concurrency** on the function (guarantees capacity, but caps it and can itself
+cause throttling). For cost-per-1,000, the unit cost is normalized by **actual served predictions**
+(Lambda invocations), not total requests, so throttled 5xx don't dilute the headline number.
+
 ---
 
 ## Observability

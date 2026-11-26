@@ -58,22 +58,6 @@ jobs:
           python scripts/load_test.py --url "$API_URL" -n "${{ inputs.requests }}" -c "${{ inputs.concurrency }}"
           echo "::notice::Load generated. The daily poll will capture the cost once Cost Explorer ingests it (~24-48h)."
 
-      # --- OIDC debug: print the ACTUAL token claims GitHub sends, so a trust-policy
-      #     mismatch is visible. Best-effort; remove once OIDC is confirmed working. ---
-      - name: OIDC claims (debug)
-        if: ${{ github.event_name == 'schedule' || (github.event_name == 'workflow_dispatch' && (inputs.action == 'load-test' || inputs.action == 'cost-query' || inputs.action == 'all')) }}
-        continue-on-error: true
-        run: |
-          TOKEN=$(curl -sH "Authorization: bearer $ACTIONS_ID_TOKEN_REQUEST_TOKEN" \
-            "$ACTIONS_ID_TOKEN_REQUEST_URL&audience=sts.amazonaws.com" | jq -r '.value')
-          python3 - "$TOKEN" <<'PY'
-          import sys, base64, json
-          p = sys.argv[1].split('.')[1]; p += '=' * (-len(p) % 4)
-          d = json.loads(base64.urlsafe_b64decode(p))
-          print("OIDC claims GitHub is sending to STS:")
-          print(json.dumps({k: d.get(k) for k in ["sub", "aud", "repository", "repository_owner", "ref"]}, indent=2))
-          PY
-
       # --- OIDC (no stored keys). Needed by the metrics summary (load-test/all) and the
       #     cost query (schedule/cost-query/all). Best-effort for load-test so a metrics
       #     auth problem never fails the load (the cost path keeps it fatal). ---

@@ -2,14 +2,15 @@ name: ML-FinOps Pipeline
 
 # Manual trigger shows an input form. The daily schedule POLLS for cost data (which lags
 # ~24-48h): it exits quietly until Cost Explorer has ingested the tagged usage, then
-# uploads the CSV artifact and opens a GitHub issue to notify you — no approval needed.
+# generates figures, commits them + the CSVs, uploads the artifact, and opens a GitHub
+# issue to notify you — no approval needed.
 on:
   workflow_dispatch:
     inputs:
       action:
         description: "What to run"
         type: choice
-        options: [load-test, cost-query, all]
+        options: [load-test, cost-query, all, figures]
         default: load-test
       requests:
         description: "load-test: number of requests"
@@ -32,10 +33,10 @@ on:
         type: string
         default: ""
   schedule:
-    - cron: "0 14 * * *" # daily 14:00 UTC — poll for cost data, notify when ready
+    - cron: "0 14 * * *" # daily 14:00 UTC — poll for cost data, build/commit figures, notify
 
 permissions:
-  contents: read
+  contents: write # commit figures + CSVs back to the repo
   id-token: write # AWS OIDC
   issues: write # open the "data ready" notification issue
 
@@ -86,12 +87,36 @@ jobs:
             echo "cost_query.py failed (exit $code)"; exit "$code"
           fi
 
-      - name: Upload cost CSVs (only when data is ready)
-        if: ${{ steps.cost.outputs.ready == 'true' }}
+      # --- Figures (matplotlib; no AWS). Runs when cost data landed, or on the manual 'figures' action. ---
+      - name: Generate figures
+        id: figs
+        if: ${{ steps.cost.outputs.ready == 'true' || (github.event_name == 'workflow_dispatch' && inputs.action == 'figures') }}
+        run: |
+          pip install -q matplotlib
+          python scripts/make_figures.py
+
+      - name: Upload CSVs + figures artifact
+        if: ${{ steps.cost.outputs.ready == 'true' || (github.event_name == 'workflow_dispatch' && inputs.action == 'figures') }}
         uses: actions/upload-artifact@v4
         with:
           name: cost-results
-          path: dashboards/*.csv
+          path: |
+            dashboards/*.csv
+            dashboards/*.png
+          if-no-files-found: warn
+
+      - name: Commit figures + CSVs to repo
+        if: ${{ steps.cost.outputs.ready == 'true' || (github.event_name == 'workflow_dispatch' && inputs.action == 'figures') }}
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add dashboards/
+          if git diff --cached --quiet; then
+            echo "No dashboard changes to commit."
+          else
+            git commit -m "chore(ci): update cost figures + CSVs [skip ci]"
+            git push origin HEAD:${{ github.ref_name }}
+          fi
 
       - name: Notify — open a one-time issue when data lands
         if: ${{ steps.cost.outputs.ready == 'true' }}
@@ -102,7 +127,7 @@ jobs:
           existing=$(gh issue list --state open --search "$title in:title" --json number --jq '.[0].number' || true)
           if [ -z "$existing" ]; then
             gh issue create --title "$title" --body \
-              "Cost Explorer has ingested the tagged usage. The latest pipeline run uploaded \`dashboards/*.csv\` as the **cost-results** artifact (Actions → latest run → Artifacts). Pull the numbers for the Final / run make_figures.py. Close this once collected."
+              "Cost Explorer has ingested the tagged usage. The latest run committed \`dashboards/*.png\` + \`*.csv\` and uploaded the **cost-results** artifact. View the figures in the repo, pull the numbers for the Final. Close this once collected."
           else
             echo "Issue #$existing already open — not duplicating."
           fi

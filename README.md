@@ -57,6 +57,6 @@ Produces `model_params.json` (the tiny exported model the Lambda loads) and a lo
 - [x] Phase 2 — **deployed** (live endpoint, 2026-11-25)
 - [~] Phase 3 — scripts written; run load test + activate `Project` tag + wait 24–48h, then `cost_query.py`
 - [~] Phase 4 — OIDC CI pipeline: `workflow_dispatch` (load-test / cost-query / all) + **daily cron that polls** for cost data (readiness-gated) and **opens a notification issue + uploads the artifact when it lands** — no stored keys, no manual approval
-- [ ] Phase 5 — analysis, figures, write-up
+- [~] Phase 5 — `make_figures.py` (matplotlib) auto-generates + **commits** figures when cost lands; manual `figures` action for restyling. Write-up pending real numbers.
 
 Full plan: `Capstone-Build-Plan.md` in the Obsidian vault.

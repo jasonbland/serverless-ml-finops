@@ -1,0 +1,76 @@
+name: ML-FinOps Pipeline
+
+# Manual trigger. GitHub shows a form for these inputs when you click "Run workflow".
+on:
+  workflow_dispatch:
+    inputs:
+      action:
+        description: "What to run"
+        type: choice
+        options: [load-test, cost-query]
+        default: load-test
+      requests:
+        description: "load-test: number of requests"
+        type: string
+        default: "20000"
+      concurrency:
+        description: "load-test: concurrency"
+        type: string
+        default: "20"
+      predictions:
+        description: "cost-query: predictions served (for the per-1,000 figure)"
+        type: string
+        default: "20000"
+      start_date:
+        description: "cost-query: start YYYY-MM-DD (blank = 7 days ago)"
+        type: string
+        default: ""
+      end_date:
+        description: "cost-query: end YYYY-MM-DD (blank = tomorrow)"
+        type: string
+        default: ""
+
+permissions:
+  contents: read
+  id-token: write # required for AWS OIDC
+
+jobs:
+  load-test:
+    if: ${{ inputs.action == 'load-test' }}
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with: { python-version: "3.12" }
+      - name: Generate load (no AWS auth needed — hits the public endpoint)
+        env:
+          API_URL: ${{ vars.API_URL }}
+        run: |
+          test -n "$API_URL" || { echo "Set the repo Actions variable API_URL first."; exit 1; }
+          python scripts/load_test.py --url "$API_URL" -n "${{ inputs.requests }}" -c "${{ inputs.concurrency }}"
+
+  cost-query:
+    if: ${{ inputs.action == 'cost-query' }}
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with: { python-version: "3.12" }
+      - name: Assume AWS role via OIDC (no stored keys)
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ vars.AWS_ROLE_ARN }}
+          aws-region: us-east-2
+      - name: Install deps
+        run: pip install -q -r scripts/requirements.txt
+      - name: Query Cost Explorer → dashboards/*.csv
+        run: |
+          python scripts/cost_query.py --predictions "${{ inputs.predictions }}" \
+            ${{ inputs.start_date != '' && format('--start {0}', inputs.start_date) || '' }} \
+            ${{ inputs.end_date != '' && format('--end {0}', inputs.end_date) || '' }}
+      - name: Upload cost CSVs as an artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: cost-results
+          path: dashboards/*.csv
+          if-no-files-found: warn

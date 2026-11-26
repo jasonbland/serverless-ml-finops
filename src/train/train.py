@@ -89,7 +89,7 @@ def main() -> None:
 
     pipe = Pipeline([
         ("scaler", StandardScaler()),
-        ("clf", LogisticRegression(max_iter=1000, class_weight="balanced")),
+        ("clf", LogisticRegression(max_iter=1000)),
     ])
     pipe.fit(X_tr, y_tr)
 

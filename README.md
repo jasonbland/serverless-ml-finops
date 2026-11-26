@@ -54,9 +54,9 @@ Produces `model_params.json` (the tiny exported model the Lambda loads) and a lo
 ## Status
 
 - [x] Phase 1 — trained + verified (2026-11-25; acc 0.861 / ROC-AUC 0.930; pure-numpy parity OK)
-- [ ] Phase 2 — serverless inference via Terraform
-- [ ] Phase 3 — cost instrumentation (CUR + tag + query)
-- [ ] Phase 4 — MLOps discipline (CI + 2nd iteration)
+- [x] Phase 2 — **deployed** (live endpoint, 2026-11-25)
+- [~] Phase 3 — scripts written; run load test + activate `Project` tag + wait 24–48h, then `cost_query.py`
+- [~] Phase 4 — OIDC CI pipeline written (`workflow_dispatch`: load-test + cost-query, no stored keys)
 - [ ] Phase 5 — analysis, figures, write-up
 
 Full plan: `Capstone-Build-Plan.md` in the Obsidian vault.

@@ -1,0 +1,29 @@
+name: CI
+
+# Fast quality gate on every push / PR: unit tests + Terraform fmt/validate.
+# (The figures-commit from the pipeline uses "[skip ci]" so it won't trigger this.)
+on:
+  push:
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  tests:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with: { python-version: "3.12" }
+      - run: pip install -q pytest
+      - run: pytest -q
+
+  terraform:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: hashicorp/setup-terraform@v3
+      - run: terraform -chdir=terraform fmt -check -recursive
+      - run: terraform -chdir=terraform init -backend=false
+      - run: terraform -chdir=terraform validate

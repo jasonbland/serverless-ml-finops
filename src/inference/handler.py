@@ -18,10 +18,16 @@ _PARAMS = None
 
 
 def _params():
-    """Load + cache the model params once per cold start."""
+    """Load + cache the model params once per cold start.
+
+    In the Lambda zip, model_params.json sits next to this file. Tests can point at the
+    committed copy via the MODEL_PARAMS_PATH env var.
+    """
     global _PARAMS
     if _PARAMS is None:
-        path = os.path.join(os.path.dirname(__file__), "model_params.json")
+        path = os.environ.get("MODEL_PARAMS_PATH") or os.path.join(
+            os.path.dirname(__file__), "model_params.json"
+        )
         with open(path) as f:
             _PARAMS = json.load(f)
     return _PARAMS

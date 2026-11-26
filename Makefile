@@ -3,7 +3,7 @@
 API_URL     ?= https://7k2e5i5b24.execute-api.us-east-2.amazonaws.com/predict
 PREDICTIONS ?= 20000
 
-.PHONY: help train deploy load cost figures test fmt destroy
+.PHONY: help train deploy load cost metrics figures test fmt destroy
 
 help: ## Show this help
 	@grep -E '^[a-zA-Z_-]+:.*?## .*$$' $(MAKEFILE_LIST) | awk 'BEGIN{FS=":.*?## "}{printf "  \033[36m%-9s\033[0m %s\n",$$1,$$2}'
@@ -19,6 +19,9 @@ load: ## Generate inference load (PREDICTIONS=N)
 
 cost: ## Query Cost Explorer → dashboards/*.csv
 	pip install -q -r scripts/requirements.txt && python3 scripts/cost_query.py --predictions $(PREDICTIONS)
+
+metrics: ## CloudWatch metrics readout for the last 20 min (needs AWS creds)
+	pip install -q boto3 && python3 scripts/metrics_summary.py --minutes 20 --api-url "$(API_URL)"
 
 figures: ## Build matplotlib figures from the CSVs
 	pip install -q matplotlib && python3 scripts/make_figures.py

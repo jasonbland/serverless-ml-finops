@@ -34,9 +34,11 @@ resource "aws_iam_role" "github_ci" {
   })
 }
 
-# Least-privilege: Cost Explorer read only (what cost_query.py needs).
+# Least-privilege: Cost Explorer read (cost_query.py) + CloudWatch metric read
+# (metrics_summary.py). GetMetricData is namespace-agnostic, so this one grant covers
+# both the AWS/Lambda and AWS/ApiGateway metrics the summary reads.
 resource "aws_iam_role_policy" "github_ci_ce" {
-  name = "cost-explorer-read"
+  name = "finops-read"
   role = aws_iam_role.github_ci.id
   policy = jsonencode({
     Version = "2012-10-17"
@@ -47,6 +49,8 @@ resource "aws_iam_role_policy" "github_ci_ce" {
         "ce:GetCostAndUsageWithResources",
         "ce:GetDimensionValues",
         "ce:GetTags",
+        "cloudwatch:GetMetricData",
+        "cloudwatch:ListMetrics",
       ]
       Resource = "*"
     }]

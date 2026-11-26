@@ -58,13 +58,25 @@ jobs:
           python scripts/load_test.py --url "$API_URL" -n "${{ inputs.requests }}" -c "${{ inputs.concurrency }}"
           echo "::notice::Load generated. The daily poll will capture the cost once Cost Explorer ingests it (~24-48h)."
 
-      # --- Cost query (OIDC; no stored keys). Runs on schedule, or dispatch cost-query/all. ---
+      # --- OIDC (no stored keys). Needed by the metrics summary (load-test/all) and the
+      #     cost query (schedule/cost-query/all). One assume covers both. ---
       - name: Assume AWS role via OIDC
-        if: ${{ github.event_name == 'schedule' || (github.event_name == 'workflow_dispatch' && (inputs.action == 'cost-query' || inputs.action == 'all')) }}
+        if: ${{ github.event_name == 'schedule' || (github.event_name == 'workflow_dispatch' && (inputs.action == 'load-test' || inputs.action == 'cost-query' || inputs.action == 'all')) }}
         uses: aws-actions/configure-aws-credentials@v4
         with:
           role-to-assume: ${{ vars.AWS_ROLE_ARN }}
           aws-region: us-east-2
+
+      # --- Monitoring readout: pull CloudWatch metrics for the run → Actions job summary ---
+      - name: Metrics summary (post load test)
+        if: ${{ github.event_name == 'workflow_dispatch' && (inputs.action == 'load-test' || inputs.action == 'all') }}
+        env:
+          API_URL: ${{ vars.API_URL }}
+        run: |
+          pip install -q boto3
+          echo "Waiting ~90s for CloudWatch metric propagation..."
+          sleep 90
+          python scripts/metrics_summary.py --minutes 20 --api-url "$API_URL" | tee -a "$GITHUB_STEP_SUMMARY"
 
       - name: Query Cost Explorer (gated — exit 2 until data lands)
         id: cost

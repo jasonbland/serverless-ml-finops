@@ -26,9 +26,18 @@ resource "aws_iam_role" "github_ci" {
       Effect    = "Allow"
       Principal = { Federated = aws_iam_openid_connect_provider.github.arn }
       Action    = "sts:AssumeRoleWithWebIdentity"
+      # AWS requires the sub (or job_workflow_ref) to be constrained — aud/repository alone
+      # is rejected as "scoped to all". GitHub now issues an IMMUTABLE sub with numeric IDs:
+      #   repo:<owner>@<ownerID>/<repo>@<repoID>:<ref...>
+      # so the @* wildcards absorb the IDs while the literal owner/repo names scope the trust
+      # to exactly this repository (any ref).
       Condition = {
-        StringEquals = { "token.actions.githubusercontent.com:aud" = "sts.amazonaws.com" }
-        StringLike   = { "token.actions.githubusercontent.com:sub" = "repo:${var.github_repo}:*" }
+        StringEquals = {
+          "token.actions.githubusercontent.com:aud" = "sts.amazonaws.com"
+        }
+        StringLike = {
+          "token.actions.githubusercontent.com:sub" = "repo:${split("/", var.github_repo)[0]}@*/${split("/", var.github_repo)[1]}@*:*"
+        }
       }
     }]
   })

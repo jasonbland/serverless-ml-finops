@@ -55,6 +55,9 @@ jobs:
           API_URL: ${{ vars.API_URL }}
         run: |
           test -n "$API_URL" || { echo "Set the repo Actions variable API_URL first."; exit 1; }
+          # Stamp the window start so the metrics query isolates THIS run only — no
+          # contamination from back-to-back runs sharing a lookback window.
+          echo "LOAD_START=$(date -u +%s)" >> "$GITHUB_ENV"
           python scripts/load_test.py --url "$API_URL" -n "${{ inputs.requests }}" -c "${{ inputs.concurrency }}"
 
       - name: Metrics summary (memory=${{ inputs.memory }} MB)
@@ -64,5 +67,5 @@ jobs:
           pip install -q boto3
           echo "Waiting ~90s for CloudWatch metric propagation..."
           sleep 90
-          python scripts/metrics_summary.py --minutes 20 --api-url "$API_URL" \
+          python scripts/metrics_summary.py --start-epoch "$LOAD_START" --api-url "$API_URL" \
             --label "memory=${{ inputs.memory }} MB" | tee -a "$GITHUB_STEP_SUMMARY"

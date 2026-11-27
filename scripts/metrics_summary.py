@@ -60,14 +60,19 @@ def main() -> int:
     ap = argparse.ArgumentParser()
     ap.add_argument("--function", default="hof-inference")
     ap.add_argument("--api-url", default="", help="API endpoint; the api-id is parsed from it")
-    ap.add_argument("--minutes", type=int, default=20, help="look-back window")
+    ap.add_argument("--minutes", type=int, default=20, help="look-back window (ignored if --start-epoch set)")
+    ap.add_argument("--start-epoch", type=int, default=0,
+                    help="Unix seconds for the window start — isolates one run exactly (overrides --minutes)")
     ap.add_argument("--region", default="us-east-2")
     ap.add_argument("--label", default="", help="optional tag for the header (e.g. 'memory=256 MB')")
     args = ap.parse_args()
 
     api_id = _api_id_from_url(args.api_url)
     end = dt.datetime.now(dt.timezone.utc)
-    start = end - dt.timedelta(minutes=args.minutes)
+    if args.start_epoch:
+        start = dt.datetime.fromtimestamp(args.start_epoch, dt.timezone.utc)
+    else:
+        start = end - dt.timedelta(minutes=args.minutes)
 
     cw = boto3.client("cloudwatch", region_name=args.region)
     specs = _queries(args.function, api_id)

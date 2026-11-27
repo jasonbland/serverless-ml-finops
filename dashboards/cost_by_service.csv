@@ -1,0 +1,5 @@
+service,cost_usd,pct_of_total
+Amazon API Gateway,0.176981,100.0
+Amazon Simple Storage Service,0.000037,0.0
+AWS Lambda,0.000000,0.0
+AmazonCloudWatch,0.000000,0.0

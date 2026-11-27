@@ -299,18 +299,27 @@ The CI role is least-privilege: Cost Explorer read + `cloudwatch:GetMetricData` 
 
 ## Results
 
-> **Measured cost data lands 24–48h after the first load test.** This section fills in once Cost
-> Explorer ingests the tagged usage; the figures below are committed by the pipeline automatically.
+The **list-price unit cost** is computed from measured CloudWatch usage (clean `-c 2` run: 5,000 requests
+→ 5,000 invocations, 2.5 ms avg @ 128 MB). The **actual billed cost** (expected ≈ \$0 under Free Tier)
+confirms via Cost Explorer once it ingests the tagged usage (~24–48h); the figures are committed by the
+pipeline automatically.
 
 | Metric | Value |
 |--------|-------|
-| Predictions served | _pending_ |
-| Actual billed cost (Free Tier) | _pending — expected ≈ \$0_ |
-| **List-price cost per 1,000 predictions** | _pending_ |
-| Dominant cost driver | _pending (expected: API Gateway requests)_ |
-| p50 / p99 inference latency | _pending_ |
+| Predictions served (clean baseline) | 5,000 (1:1, 0 throttles) |
+| **List-price cost per 1,000 predictions** | **≈ \$0.0012** (≈ \$1.21 / million) |
+| Dominant cost driver | **API Gateway ~83%** · Lambda requests ~17% · compute **<0.5%** |
+| Inference latency (execution) | p50 **1.6 ms** · p99 **18.1 ms** · max 81.5 ms (cold start) |
+| API latency (edge) | p50 **12.2 ms** · p99 **23.9 ms** |
+| Actual billed cost (Free Tier) | _pending Cost Explorer — expected ≈ \$0_ |
 
-**Lambda memory experiment** (128 / 256 / 512 MB → cost + latency per 1,000): _planned once baseline cost data is in._
+**Headline:** for a trivial model on serverless, cost is **request-plumbing-dominated, not compute** —
+inference is under half a percent of the bill. The Lambda **memory experiment** (128/256/512 MB) is
+expected to barely move the total for exactly this reason; that non-result *is* the finding.
+
+**Concurrency finding:** the account's Lambda concurrency quota is 10, and at 128 MB the function
+cold-starts enough that bursts above the quota throttle — a `-c 8` run threw 36% throttles (returned as
+API 5xx) while a `-c 2` run ran clean. See [ARCHITECTURE.md](ARCHITECTURE.md#finding-cold-start-churn-throttles-at-a-constrained-concurrency-quota).
 
 <!-- Figures auto-committed by the pipeline:
 ![Cost by service](dashboards/cost_by_service.png)

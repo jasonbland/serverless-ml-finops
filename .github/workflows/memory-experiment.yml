@@ -1,0 +1,68 @@
+name: Memory Experiment
+
+# Flips the inference Lambda's memory, runs a clean load, and reports the per-config
+# metrics to the job summary. Run once per memory size (128/256/512/1024) to build the
+# cost/latency/throttle-vs-memory comparison for the capstone.
+#
+# NOTE: this mutates memory out-of-band (one scoped lambda:UpdateFunctionConfiguration
+# call — Terraform state in CI isn't available). Terraform remains the source of truth for
+# the baseline (var.lambda_memory, default 128); run `terraform apply` afterward to reconcile.
+on:
+  workflow_dispatch:
+    inputs:
+      memory:
+        description: "Lambda memory (MB)"
+        type: choice
+        options: ["128", "256", "512", "1024"]
+        default: "256"
+      requests:
+        description: "number of requests"
+        type: string
+        default: "3000"
+      concurrency:
+        description: "client concurrency (keep ≤ the Lambda quota to avoid throttling)"
+        type: string
+        default: "2"
+
+permissions:
+  id-token: write # OIDC
+  contents: read
+
+jobs:
+  experiment:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with: { python-version: "3.12" }
+
+      - name: Assume AWS role via OIDC
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ vars.AWS_ROLE_ARN }}
+          aws-region: us-east-2
+
+      - name: Set Lambda memory → ${{ inputs.memory }} MB
+        run: |
+          aws lambda update-function-configuration \
+            --function-name hof-inference \
+            --memory-size ${{ inputs.memory }} >/dev/null
+          aws lambda wait function-updated-v2 --function-name hof-inference
+          echo "::notice::Memory set to ${{ inputs.memory }} MB. Environments were reset → first calls are cold (that's what we want to measure)."
+
+      - name: Generate load  (n=${{ inputs.requests }}, c=${{ inputs.concurrency }})
+        env:
+          API_URL: ${{ vars.API_URL }}
+        run: |
+          test -n "$API_URL" || { echo "Set the repo Actions variable API_URL first."; exit 1; }
+          python scripts/load_test.py --url "$API_URL" -n "${{ inputs.requests }}" -c "${{ inputs.concurrency }}"
+
+      - name: Metrics summary (memory=${{ inputs.memory }} MB)
+        env:
+          API_URL: ${{ vars.API_URL }}
+        run: |
+          pip install -q boto3
+          echo "Waiting ~90s for CloudWatch metric propagation..."
+          sleep 90
+          python scripts/metrics_summary.py --minutes 20 --api-url "$API_URL" \
+            --label "memory=${{ inputs.memory }} MB" | tee -a "$GITHUB_STEP_SUMMARY"

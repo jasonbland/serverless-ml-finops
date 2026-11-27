@@ -15,3 +15,9 @@ variable "lambda_name" {
   type        = string
   default     = "hof-inference"
 }
+
+variable "lambda_memory" {
+  description = "Lambda memory (MB) — baseline. The memory experiment mutates this live via the Actions workflow; `terraform apply` reconciles back to this value."
+  type        = number
+  default     = 128
+}

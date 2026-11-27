@@ -82,7 +82,7 @@ resource "aws_lambda_function" "infer" {
   filename         = data.archive_file.lambda.output_path
   source_code_hash = data.archive_file.lambda.output_base64sha256
   timeout          = 10
-  memory_size      = 128
+  memory_size      = var.lambda_memory
   depends_on       = [aws_cloudwatch_log_group.lambda, aws_iam_role_policy_attachment.basic]
 }
 

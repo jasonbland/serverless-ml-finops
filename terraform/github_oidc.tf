@@ -51,18 +51,32 @@ resource "aws_iam_role_policy" "github_ci_ce" {
   role = aws_iam_role.github_ci.id
   policy = jsonencode({
     Version = "2012-10-17"
-    Statement = [{
-      Effect = "Allow"
-      Action = [
-        "ce:GetCostAndUsage",
-        "ce:GetCostAndUsageWithResources",
-        "ce:GetDimensionValues",
-        "ce:GetTags",
-        "cloudwatch:GetMetricData",
-        "cloudwatch:ListMetrics",
-      ]
-      Resource = "*"
-    }]
+    Statement = [
+      {
+        Sid    = "FinOpsReadOnly"
+        Effect = "Allow"
+        Action = [
+          "ce:GetCostAndUsage",
+          "ce:GetCostAndUsageWithResources",
+          "ce:GetDimensionValues",
+          "ce:GetTags",
+          "cloudwatch:GetMetricData",
+          "cloudwatch:ListMetrics",
+        ]
+        Resource = "*"
+      },
+      {
+        # Memory experiment: flip memory on the single inference function (no terraform in CI).
+        Sid    = "MemoryExperiment"
+        Effect = "Allow"
+        Action = [
+          "lambda:UpdateFunctionConfiguration",
+          "lambda:GetFunction",
+          "lambda:GetFunctionConfiguration",
+        ]
+        Resource = "arn:aws:lambda:${var.region}:${data.aws_caller_identity.me.account_id}:function:${var.lambda_name}"
+      },
+    ]
   })
 }
 

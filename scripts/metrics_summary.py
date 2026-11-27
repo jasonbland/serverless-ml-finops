@@ -62,6 +62,7 @@ def main() -> int:
     ap.add_argument("--api-url", default="", help="API endpoint; the api-id is parsed from it")
     ap.add_argument("--minutes", type=int, default=20, help="look-back window")
     ap.add_argument("--region", default="us-east-2")
+    ap.add_argument("--label", default="", help="optional tag for the header (e.g. 'memory=256 MB')")
     args = ap.parse_args()
 
     api_id = _api_id_from_url(args.api_url)
@@ -107,8 +108,11 @@ def main() -> int:
     def g(k):
         return vals.get(k, 0.0)
 
+    title = f"## 📊 Metrics summary — last {args.minutes} min"
+    if args.label:
+        title += f" · **{args.label}**"
     lines = [
-        f"## 📊 Metrics summary — last {args.minutes} min",
+        title,
         "",
         f"Window: `{start:%Y-%m-%d %H:%M}`–`{end:%H:%M} UTC` · region `{args.region}` · function `{args.function}`"
         + (f" · api `{api_id}`" if api_id else " · _(no API URL — Lambda metrics only)_"),
